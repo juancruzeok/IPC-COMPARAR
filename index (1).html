@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Comparador IPC/CBA vs Mercado — 2025</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root{ --bg:#0b5cab; --muted:#f4f6f8; --ink:#0f172a; --ok:#0ea5e9; --warn:#ef4444; --card:#fff; }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,"Noto Sans",sans-serif;color:var(--ink);background:#fafafa}
+    header{background:var(--bg);color:white;padding:18px 14px}
+    header h1{margin:0;font-size:clamp(18px,3vw,26px)}
+    header p{margin:.3rem 0 0;opacity:.9}
+    main{max-width:1200px;margin:0 auto;padding:14px}
+    .grid{display:grid;gap:14px}
+    @media(min-width:980px){.grid.cols-2{grid-template-columns:340px 1fr}}
+    .card{background:var(--card);border-radius:12px;box-shadow:0 3px 12px rgba(2,8,20,.06);padding:12px}
+    .card h3{margin:.15rem 0 .6rem;font-size:1rem}
+    .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin:6px 0 10px}
+    .toolbar > *{margin-right:6px}
+    label{font-size:.85rem;opacity:.9}
+    select,input[type=file],button{border:1px solid #d9dee6;border-radius:10px;padding:7px 9px;background:white;font-size:.92rem}
+    button{cursor:pointer}
+    .muted{color:#475569;font-size:.9rem}
+    .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:.3rem 0 0}
+    .kpi{background:#fff;border:1px solid #e7ecf2;border-radius:10px;padding:10px}
+    .kpi .v{font-size:1.1rem;font-weight:700}
+    table{width:100%;border-collapse:collapse;font-size:.9rem}
+    th,td{padding:7px;border-bottom:1px solid #eef1f4;text-align:right}
+    th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
+    thead th{background:var(--muted)}
+    .sticky{position:sticky;top:8px}
+    .inline-help{background:#eef6ff;border-left:3px solid var(--ok);padding:9px;border-radius:8px;font-size:.88rem}
+    .ok{color:var(--ok)} .warn{color:var(--warn)}
+    .chart-wrap{height:240px} /* más chico */
+    .chart-wrap.compacto{height:180px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .grow{flex:1}
+  </style>
+</head>
+<body>
+<header>
+  <h1>Comparador IPC/CBA vs precios de mercado — 2025</h1>
+  <p>Seleccioná un artículo de la canasta y compará niveles y brechas con marcas/SKU reales. Soporta datasets grandes.</p>
+</header>
+
+<main>
+  <div class="grid cols-2">
+    <aside class="card sticky">
+      <h3>Datos y filtros</h3>
+      <div class="inline-help">
+        Cargá dos CSV (oficial y mercado). Si no cargás, hay datos de <i>demo</i> para probar. Podés elegir <b>agregación de mercado</b> (promedio, mínima, máxima, mediana) además del SKU.
+      </div>
+
+      <div class="toolbar">
+        <div>
+          <label>CSV Oficial (INDEC/CBA)</label><br/>
+          <input type="file" id="fileOficial" accept=".csv"/>
+        </div>
+        <div>
+          <label>CSV Mercado (hiper/super)</label><br/>
+          <input type="file" id="fileMercado" accept=".csv"/>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div>
+          <label>Categoría</label><br/>
+          <select id="categoryFilter"></select>
+        </div>
+        <div class="grow">
+          <label>Artículo</label><br/>
+          <select id="productFilter" style="width:100%"></select>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div>
+          <label>Marca/SKU</label><br/>
+          <select id="skuFilter"></select>
+        </div>
+        <div>
+          <label>Agregación mercado</label><br/>
+          <select id="marketAgg">
+            <option value="sku">SKU seleccionado</option>
+            <option value="avg">Promedio SKUs</option>
+            <option value="min">Mínimo (mejor precio)</option>
+            <option value="max">Máximo</option>
+            <option value="median">Mediana</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div>
+          <label>Vista</label><br/>
+          <select id="viewMode">
+            <option value="level">Niveles (ARS)</option>
+            <option value="gap">Brecha %</option>
+          </select>
+        </div>
+        <div>
+          <label>Orientación</label><br/>
+          <select id="orient">
+            <option value="line">Línea compacta</option>
+            <option value="barh">Barras horizontales (brecha)</option>
+          </select>
+        </div>
+        <div>
+          <label>Tamaño</label><br/>
+          <select id="size">
+            <option value="normal">Normal</option>
+            <option value="compacto">Compacto</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi"><div class="muted">Promedio brecha YTD</div><div class="v" id="avgGap">–</div></div>
+        <div class="kpi"><div class="muted">Máxima brecha (mes)</div><div class="v" id="maxGap">–</div></div>
+        <div class="kpi"><div class="muted">Dif. absoluta prom. (ARS)</div><div class="v" id="avgAbs">–</div></div>
+      </div>
+    </aside>
+
+    <section class="card">
+      <div class="row"><h3 class="grow">Serie mensual 2025 — seleccionado</h3></div>
+      <div id="itemChartWrap" class="chart-wrap"><canvas id="itemChart"></canvas></div>
+      <div class="muted" style="margin-top:6px;font-size:.88rem">Tip: cambiá “Agregación mercado” para ver promedios, mejor precio o mediana (si hay muchos SKU).</div>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:12px">
+    <h3>Tabla comparativa (enero → diciembre 2025)</h3>
+    <div class="muted" style="font-size:.88rem">Oficial vs mercado por mes y brecha %; los meses sin dato quedan en blanco.</div>
+    <div style="overflow:auto;margin-top:8px"><table id="cmpTable"></table></div>
+  </section>
+
+  <section class="card" style="margin-top:12px">
+    <h3>Visión general (placeholder)</h3>
+    <div class="muted" style="font-size:.88rem">Promedio simple de todos los items cargados (luego podemos reemplazar por agregados formales).</div>
+    <div class="chart-wrap compacto"><canvas id="overviewChart"></canvas></div>
+  </section>
+</main>
+
+<script>
+const MONTHS = ["2025-01","2025-02","2025-03","2025-04","2025-05","2025-06","2025-07","2025-08","2025-09","2025-10","2025-11","2025-12"];
+const labelOf = m => ({"01":"Ene","02":"Feb","03":"Mar","04":"Abr","05":"May","06":"Jun","07":"Jul","08":"Ago","09":"Sep","10":"Oct","11":"Nov","12":"Dic"})[m.slice(-2)]||m;
+const fmtMoney = x => (x==null||x==='')? "" : new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(+x);
+const pct = (a,b)=> (a==null||a===''||b==null||b===''||+b===0) ? "" : ((+a/+b-1)*100);
+const avg = arr => {const v=arr.filter(Number.isFinite); return v.length? v.reduce((a,b)=>a+b,0)/v.length : NaN;};
+const median = arr => {const v=arr.filter(Number.isFinite).sort((a,b)=>a-b); const n=v.length; return n? (n%2?v[(n-1)/2]:(v[n/2-1]+v[n/2])/2):NaN;};
+const maxWithIndex = arr => {let m=-Infinity,i=-1; arr.forEach((v,idx)=>{ if(Number.isFinite(v) && v>m){m=v;i=idx;} }); return {max:m,idx:i}; };
+
+function parseCSV(text){
+  const rows = text.trim().split(/\\r?\\n/).map(r=>r.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c=>c.replace(/^\"|\"$/g,'')));
+  const header = rows.shift();
+  return rows.map(r=>Object.fromEntries(header.map((h,i)=>[h.trim(), r[i]!==undefined?r[i].trim():""])));
+}
+
+// DEMO ampliada
+let OFICIAL = [
+  {product_code:"LEC1",product_name:"Leche entera 1L",category:"Lácteos","2025-01":980,"2025-02":990,"2025-03":1050,"2025-04":1060,"2025-05":1055,"2025-06":1080,"2025-07":1100,"2025-08":1110},
+  {product_code:"PAN1",product_name:"Pan francés 1kg",category:"Panificación","2025-01":1800,"2025-02":1900,"2025-03":2000,"2025-04":2040,"2025-05":2050,"2025-06":2100,"2025-07":2150,"2025-08":2170},
+  {product_code:"ARR1",product_name:"Arroz largo fino 1kg",category:"Almacén","2025-01":1450,"2025-02":1480,"2025-03":1500,"2025-04":1515,"2025-05":1520,"2025-06":1550,"2025-07":1570,"2025-08":1585},
+  {product_code:"AZU1",product_name:"Azúcar 1kg",category:"Almacén","2025-01":1250,"2025-02":1270,"2025-03":1300,"2025-04":1310,"2025-05":1320,"2025-06":1340,"2025-07":1360,"2025-08":1375},
+  {product_code:"ACE1",product_name:"Aceite mezcla 1.5L",category:"Almacén","2025-01":2500,"2025-02":2550,"2025-03":2600,"2025-04":2620,"2025-05":2630,"2025-06":2660,"2025-07":2700,"2025-08":2720},
+  {product_code:"HUE1",product_name:"Huevos docena",category:"Huevos y aves","2025-01":2300,"2025-02":2320,"2025-03":2350,"2025-04":2380,"2025-05":2400,"2025-06":2450,"2025-07":2480,"2025-08":2500},
+  {product_code:"POL1",product_name:"Pollo entero 1kg",category:"Huevos y aves","2025-01":1800,"2025-02":1820,"2025-03":1860,"2025-04":1880,"2025-05":1890,"2025-06":1920,"2025-07":1950,"2025-08":1970},
+  {product_code:"YER1",product_name:"Yerba mate 1kg",category:"Bebidas calientes","2025-01":3500,"2025-02":3550,"2025-03":3600,"2025-04":3650,"2025-05":3680,"2025-06":3720,"2025-07":3760,"2025-08":3800}
+];
+let MERCADO = [
+  {product_code:"LEC1",product_name:"Leche entera 1L",brand:"LaVaquita",sku:"LVQ-1L",store:"HiperUno",category:"Lácteos","2025-01":1020,"2025-02":1010,"2025-03":1080,"2025-04":1100,"2025-05":1120,"2025-06":1140,"2025-07":1160,"2025-08":1185},
+  {product_code:"LEC1",product_name:"Leche entera 1L",brand:"Colonia",sku:"COL-1L",store:"SuperMax",category:"Lácteos","2025-01":1000,"2025-02":1005,"2025-03":1060,"2025-04":1070,"2025-05":1090,"2025-06":1115,"2025-07":1130,"2025-08":1145},
+  {product_code:"LEC1",product_name:"Leche entera 1L",brand:"LácteaSur",sku:"LCS-1L",store:"EcoMarket",category:"Lácteos","2025-01":990,"2025-02":995,"2025-03":1055,"2025-04":1065,"2025-05":1080,"2025-06":1100,"2025-07":1125,"2025-08":1135},
+  {product_code:"PAN1",product_name:"Pan francés 1kg",brand:"PanBello",sku:"PBL-1K",store:"HiperUno",category:"Panificación","2025-01":1900,"2025-02":1950,"2025-03":2060,"2025-04":2120,"2025-05":2140,"2025-06":2180,"2025-07":2250,"2025-08":2290},
+  {product_code:"PAN1",product_name:"Pan francés 1kg",brand:"Trigal",sku:"TRI-1K",store:"SuperMax",category:"Panificación","2025-01":1850,"2025-02":1920,"2025-03":2030,"2025-04":2090,"2025-05":2120,"2025-06":2160,"2025-07":2210,"2025-08":2260},
+  {product_code:"ARR1",product_name:"Arroz largo fino 1kg",brand:"Pampa",sku:"PAM-1K",store:"SuperMax",category:"Almacén","2025-01":1500,"2025-02":1510,"2025-03":1540,"2025-04":1560,"2025-05":1580,"2025-06":1600,"2025-07":1630,"2025-08":1650},
+  {product_code:"ARR1",product_name:"Arroz largo fino 1kg",brand:"Delta",sku:"DEL-1K",store:"EcoMarket",category:"Almacén","2025-01":1470,"2025-02":1490,"2025-03":1510,"2025-04":1530,"2025-05":1550,"2025-06":1580,"2025-07":1600,"2025-08":1620},
+  {product_code:"AZU1",product_name:"Azúcar 1kg",brand:"Dulzor",sku:"DLZ-1K",store:"HiperUno",category:"Almacén","2025-01":1280,"2025-02":1290,"2025-03":1320,"2025-04":1340,"2025-05":1350,"2025-06":1360,"2025-07":1380,"2025-08":1400},
+  {product_code:"AZU1",product_name:"Azúcar 1kg",brand:"Lira",sku:"LIR-1K",store:"SuperMax",category:"Almacén","2025-01":1240,"2025-02":1260,"2025-03":1290,"2025-04":1300,"2025-05":1310,"2025-06":1330,"2025-07":1350,"2025-08":1365},
+  {product_code:"ACE1",product_name:"Aceite mezcla 1.5L",brand:"Oleum",sku:"OLE-15",store:"HiperUno",category:"Almacén","2025-01":2550,"2025-02":2580,"2025-03":2620,"2025-04":2650,"2025-05":2670,"2025-06":2690,"2025-07":2730,"2025-08":2760},
+  {product_code:"ACE1",product_name:"Aceite mezcla 1.5L",brand:"Sol",sku:"SOL-15",store:"SuperMax",category:"Almacén","2025-01":2480,"2025-02":2510,"2025-03":2580,"2025-04":2600,"2025-05":2620,"2025-06":2660,"2025-07":2680,"2025-08":2700},
+  {product_code:"HUE1",product_name:"Huevos docena",brand:"GranjaSur",sku:"GRA-12",store:"EcoMarket",category:"Huevos y aves","2025-01":2350,"2025-02":2360,"2025-03":2390,"2025-04":2420,"2025-05":2440,"2025-06":2470,"2025-07":2500,"2025-08":2520},
+  {product_code:"HUE1",product_name:"Huevos docena",brand:"Ponedoras",sku:"PON-12",store:"HiperUno",category:"Huevos y aves","2025-01":2290,"2025-02":2310,"2025-03":2340,"2025-04":2370,"2025-05":2390,"2025-06":2440,"2025-07":2470,"2025-08":2490},
+  {product_code:"POL1",product_name:"Pollo entero 1kg",brand:"Avícola",sku:"AVI-1K",store:"HiperUno",category:"Huevos y aves","2025-01":1840,"2025-02":1850,"2025-03":1880,"2025-04":1910,"2025-05":1930,"2025-06":1960,"2025-07":1980,"2025-08":2010},
+  {product_code:"POL1",product_name:"Pollo entero 1kg",brand:"CampoLimpio",sku:"CPL-1K",store:"SuperMax",category:"Huevos y aves","2025-01":1780,"2025-02":1810,"2025-03":1850,"2025-04":1860,"2025-05":1880,"2025-06":1910,"2025-07":1940,"2025-08":1960},
+  {product_code:"YER1",product_name:"Yerba mate 1kg",brand:"Taragui",sku:"TAR-1K",store:"HiperUno",category:"Bebidas calientes","2025-01":3600,"2025-02":3620,"2025-03":3680,"2025-04":3720,"2025-05":3750,"2025-06":3800,"2025-07":3850,"2025-08":3890},
+  {product_code:"YER1",product_name:"Yerba mate 1kg",brand:"Playadito",sku:"PLA-1K",store:"SuperMax",category:"Bebidas calientes","2025-01":3480,"2025-02":3520,"2025-03":3580,"2025-04":3630,"2025-05":3660,"2025-06":3700,"2025-07":3740,"2025-08":3780}
+];
+
+const $cat = document.getElementById('categoryFilter');
+const $prod = document.getElementById('productFilter');
+const $sku  = document.getElementById('skuFilter');
+const $view = document.getElementById('viewMode');
+const $orient = document.getElementById('orient');
+const $size = document.getElementById('size');
+const $agg = document.getElementById('marketAgg');
+const $avgGap = document.getElementById('avgGap');
+const $maxGap = document.getElementById('maxGap');
+const $avgAbs = document.getElementById('avgAbs');
+let itemChart, overviewChart;
+
+const monthsAvailable = data => MONTHS.filter(m => data.some(r => r[m]!=null && r[m]!==''));
+const monthsToLabels = ms => ms.map(m=>labelOf(m));
+
+function unique(xs){ return [...new Set(xs)]; }
+function refreshFilters(){
+  const cats = unique(OFICIAL.map(r=>r.category)).sort();
+  $cat.innerHTML = ['<option value="__ALL__">Todas</option>', ...cats.map(c=>`<option>${c}</option>`)].join('');
+  const opts = OFICIAL.filter(r => $cat.value==='__ALL__' || r.category===$cat.value);
+  $prod.innerHTML = opts.map(r=>`<option value="${r.product_code}">${r.product_name}</option>`).join('');
+  refreshSku();
+}
+
+function refreshSku(){
+  const code = $prod.value;
+  const skus = MERCADO.filter(r=>r.product_code===code);
+  $sku.innerHTML = skus.map(r=>`<option value="${r.sku}">${r.brand} · ${r.store} (${r.sku})</option>`).join('');
+  if(!$sku.value && skus[0]) $sku.value = skus[0].sku;
+  drawItem();
+  drawTable();
+}
+
+function aggMarketSeries(code, months, mode){
+  const rows = MERCADO.filter(r=>r.product_code===code);
+  if(mode==='sku'){
+    const sel = rows.find(r=>r.sku===$sku.value) || rows[0] || {};
+    return months.map(m => (sel[m]!=null && sel[m]!=='' ? +sel[m] : null));
+  }
+  const seriesByMonth = months.map(m => {
+    const vals = rows.map(r=> +r[m]).filter(Number.isFinite);
+    if(!vals.length) return null;
+    if(mode==='avg') return avg(vals);
+    if(mode==='min') return Math.min(...vals);
+    if(mode==='max') return Math.max(...vals);
+    if(mode==='median') return median(vals);
+    return avg(vals);
+  });
+  return seriesByMonth;
+}
+
+function drawItem(){
+  const code = $prod.value;
+  const oficial = OFICIAL.find(r=>r.product_code===code);
+  const months = monthsAvailable([oficial]);
+  const oSeries = months.map(m => Number(oficial?.[m]) || null);
+  const mSeries = aggMarketSeries(code, months, $agg.value);
+
+  const ctx = document.getElementById('itemChart').getContext('2d');
+  if(itemChart) itemChart.destroy();
+
+  const showGap = $view.value==='gap';
+  const labels = monthsToLabels(months);
+  const dataGap = months.map((_,i)=> pct(mSeries[i], oSeries[i]));
+
+  const wrap = document.getElementById('itemChartWrap');
+  if($size.value==='compacto'){ wrap.classList.add('compacto'); } else { wrap.classList.remove('compacto'); }
+
+  if($orient.value==='barh' && showGap){
+    itemChart = new Chart(ctx, {
+      type:'bar',
+      data:{ labels, datasets:[{label:'Brecha % (Mercado vs Oficial)', data:dataGap}] },
+      options:{
+        indexAxis:'y',
+        responsive:true, maintainAspectRatio:false,
+        scales:{ x:{ ticks:{ callback:(v)=> v+'%' } } },
+        plugins:{ tooltip:{ callbacks:{ label:(ctx)=>` ${ctx.raw?.toFixed(1)}%` } } }
+      }
+    });
+  } else {
+    const ds = [{label: showGap?'Brecha % (Mercado vs Oficial)':'Oficial (INDEC/CBA)', data: showGap? dataGap : oSeries, tension:.25, pointRadius:2}];
+    if(!showGap){ ds.push({label:'Mercado ('+($agg.value==='sku'?'SKU':'Agregación')+')', data:mSeries, tension:.25, pointRadius:2}); }
+    itemChart = new Chart(ctx, {
+      type:'line',
+      data:{ labels, datasets: ds },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        scales:{
+          y:{ ticks:{ callback:(v)=> showGap? (v+'%') : new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(v) } }
+        },
+        plugins:{ tooltip:{ callbacks:{ label:(ctx)=> showGap? ` ${ctx.raw?.toFixed(1)}%` : ` ${fmtMoney(ctx.raw)}` } } }
+      }
+    });
+  }
+
+  // KPIs
+  const abs = months.map((_,i)=> (Number.isFinite(mSeries[i]) && Number.isFinite(oSeries[i])) ? (mSeries[i]-oSeries[i]) : NaN);
+  const avgGapVal = avg(dataGap);
+  const {max, idx} = maxWithIndex(dataGap);
+  const avgAbsVal = avg(abs);
+  document.getElementById('avgGap').textContent = Number.isFinite(avgGapVal) ? (avgGapVal>0?'+':'')+avgGapVal.toFixed(1)+'%' : '–';
+  document.getElementById('maxGap').textContent = Number.isFinite(max) ? max.toFixed(1)+'% ('+(months[idx]?labelOf(months[idx].slice(-2)):'–')+')' : '–';
+  document.getElementById('avgAbs').textContent = Number.isFinite(avgAbsVal) ? fmtMoney(avgAbsVal) : '–';
+}
+
+function drawTable(){
+  const code = $prod.value;
+  const oficial = OFICIAL.find(r=>r.product_code===code);
+  const months = MONTHS; // tabla completa
+  const mSeries = aggMarketSeries(code, months, $agg.value);
+
+  let html = '<thead><tr><th>Mes</th><th>Concepto</th>' + months.map(m=>`<th>${labelOf(m)}</th>`).join('') + '</tr></thead><tbody>';
+  html += '<tr><td rowspan="3">2025</td><td>Oficial</td>' + months.map(m=>`<td>${fmtMoney(oficial?.[m])}</td>`).join('') + '</tr>';
+  html += '<tr><td>Mercado ('+($agg.value==='sku'?'SKU':'Agregación')+')</td>' + months.map((m,i)=>`<td>${fmtMoney(mSeries[i])}</td>`).join('') + '</tr>';
+  html += '<tr><td>Brecha %</td>' + months.map((m,i)=>{
+    const p = pct(mSeries[i], oficial?.[m]);
+    return `<td class="${Number.isFinite(p)&&p>0?'warn':'ok'}">${p===''?'':p.toFixed(1)+'%'}</td>`;
+  }).join('') + '</tr>';
+  html += '</tbody>';
+  document.getElementById('cmpTable').innerHTML = html;
+}
+
+function drawOverview(){
+  const ctx = document.getElementById('overviewChart').getContext('2d');
+  if(overviewChart) overviewChart.destroy();
+  const months = monthsAvailable(OFICIAL);
+  const o = months.map(m=> avg(OFICIAL.map(r=> +r[m]||NaN)));
+  const m = months.map(m=> avg(MERCADO.map(r=> +r[m]||NaN)));
+  overviewChart = new Chart(ctx, {
+    type:'line',
+    data:{ labels: months.map(labelOf), datasets:[
+      {label:'CBA/Oficial (promedio items)', data:o, tension:.25, pointRadius:2},
+      {label:'Mercado (promedio items)', data:m, tension:.25, pointRadius:2}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false}
+  });
+}
+
+document.getElementById('fileOficial').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ OFICIAL=parseCSV(r.result); refreshFilters(); drawOverview(); };
+  r.readAsText(f,'utf-8');
+});
+document.getElementById('fileMercado').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ MERCADO=parseCSV(r.result); refreshSku(); drawOverview(); };
+  r.readAsText(f,'utf-8');
+});
+
+$cat.addEventListener('change', refreshFilters);
+$prod.addEventListener('change', ()=>{ refreshSku(); });
+$sku.addEventListener('change', ()=>{ drawItem(); drawTable(); });
+$view.addEventListener('change', ()=>{ drawItem(); });
+$orient.addEventListener('change', ()=>{ drawItem(); });
+$size.addEventListener('change', ()=>{ drawItem(); window.dispatchEvent(new Event('resize')); });
+$agg.addEventListener('change', ()=>{ drawItem(); drawTable(); });
+
+refreshFilters(); drawItem(); drawTable(); drawOverview();
+</script>
+</body>
+</html>
